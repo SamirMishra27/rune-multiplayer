@@ -1,27 +1,33 @@
 import { useEffect, useState, MouseEvent } from 'react'
-import { RunRaceGame, PlayerState, PlayerAction } from './logic/types.ts'
-import { getRandInt } from './utils.ts'
-import './index.css'
-import ActionButton from './components/ActionButton.tsx'
 import { Players } from 'rune-games-sdk/multiplayer'
-import { sleep } from './utils.ts'
+
+import ActionButton from './components/ActionButton.tsx'
+import TimelineAction from './components/TimelineAction.tsx'
+import Leaderboards from './components/Leaderboards.tsx'
+
+import { RunRaceGame, PlayerState, PlayerAction } from './logic/types.ts'
+import { getRandChoice, getRandInt, sleep } from './utils.ts'
+import { normalLines, wicketLines } from './commentary.ts'
+
+import './index.css'
+import music from './assets/resort-time.mp3'
+const bgMusic = new Audio(music)
 
 function App() {
-    const [game, setGame] = useState<RunRaceGame>()
-    const [stats, setStats] = useState<PlayerState>()
     const [playerId, setPlayerId] = useState<string>('')
-    const [preventPlay, setPreventPlay] = useState<boolean>(false)
+    const [game, setGame] = useState<RunRaceGame>()
 
     const [participants, setParticipants] = useState<Players>()
+    const [commentary, setCommentary] = useState('Good luck! 😎')
+
+    const [stats, setStats] = useState<PlayerState>()
     const [playerStats, setPlayerStats] = useState<PlayerState[]>([])
 
     const [compAction, setAction] = useState<number | null>(null)
     const [rank, setRank] = useState<number>(4)
 
+    const [preventPlay, setPreventPlay] = useState<boolean>(false)
     const [wait, setWait] = useState<boolean>(false)
-    const [commentary, setCommentary] = useState('Good luck! 😎')
-
-    const overs = (balls: number): string => `${Math.floor(balls / 6)}.${balls % 6}`
 
     function getCurrentRank() {
         for (let i = 0; i < playerStats.length; i++) {
@@ -31,12 +37,6 @@ function App() {
                 break
             }
         }
-    }
-
-    function getBorderColour(index: number): string {
-        if (index === 0) return '#FFD93D'
-        else if (index === 1) return '#9DB2BF'
-        else return '#6C3428'
     }
 
     useEffect(() => {
@@ -83,6 +83,13 @@ function App() {
         setPreventPlay(stats.balls >= game.maxOvers * 6 || stats.wickets >= game.maxWickets)
     }, [stats])
 
+    useEffect(() => {
+        bgMusic.volume = 0.25
+        bgMusic.play()
+
+        return () => bgMusic.pause()
+    })
+
     async function handleAction(event: MouseEvent<HTMLButtonElement>): Promise<void> {
         if (!(event.target instanceof HTMLButtonElement)) return
 
@@ -110,7 +117,7 @@ function App() {
             if (stats && stats.wickets + 1 === game!.maxWickets) {
                 setCommentary('You are all out! Waiting for the game to end...')
             } else {
-                setCommentary('You are out! Haha')
+                setCommentary(getRandChoice(wicketLines))
             }
         } else {
             Rune.actions.incrementRuns({ action, playerId })
@@ -118,37 +125,23 @@ function App() {
             if (stats && stats.balls + 1 === game!.maxOvers * 6) {
                 setCommentary('Overs finished! Waiting for the game to end...')
             } else {
-                setCommentary('Nice shot!')
+                setCommentary(getRandChoice(normalLines))
             }
         }
         setWait(false)
     }
 
     if (!game) {
-        return <div>Loading...</div>
+        return (
+            <div className=" text-white text-2xl text-center px-8">
+                Padding up to smash some sixes...
+            </div>
+        )
     }
 
     return (
         <main className=" w-full h-full flex flex-col items-center justify-evenly gap-2 overflow-hidden">
-            <aside className=" w-11/12 flex flex-col items-center justify-evenly p-2 gap-1 [border:1px_solid_black] rounded-lg">
-                <h1 className=" text-2xl font-medium text-white">Leaderboard</h1>
-                {participants &&
-                    playerStats.map((player, index) => {
-                        const playerInfo = participants[player.id]
-
-                        return (
-                            <div
-                                className=" w-full px-3 py-1 flex items-center justify-between bg-orange-300 rounded-xl border-x-8 border-y-2"
-                                key={player.id}
-                                style={{
-                                    borderColor: getBorderColour(index),
-                                }}>
-                                <span className=" text-lg">{playerInfo.displayName} </span>
-                                <span className=" text-lg">{player.runs} Runs</span>
-                            </div>
-                        )
-                    })}
-            </aside>
+            <Leaderboards participants={participants} playerStats={playerStats} />
 
             <section className=" flex items-center justify-evenly px-1 gap-2 text-white">
                 <aside className=" min-w-[4rem] min-h-[5.25rem] flex flex-col items-center text-center justify-evenly px-4 py-1 [border:1px_solid_white] rounded-xl">
@@ -156,10 +149,10 @@ function App() {
                     <hr className=" w-11/12 border-slate-900" />
                     {stats ? (
                         <p>
-                            {stats.runs} / {stats.wickets} ({overs(stats.balls)})
+                            {stats.runs} / {stats.wickets} ({stats.balls} Balls)
                         </p>
                     ) : (
-                        <p>0 / 0 (0.0)</p>
+                        <p>0 / 0 (0 Balls)</p>
                     )}
                 </aside>
 
@@ -192,16 +185,16 @@ function App() {
                 ))}
             </section>
 
-            <section className=" w-10/12 h-9 flex items-center justify-evenly p-2 bg-[#bca180] gap-1 mx-4 rounded-2xl ">
-                {stats &&
-                    stats.timeline.slice(-6).map((action, index) => (
-                        <div
-                            className="timeline-action px-2 rounded-lg font-medium text-slate-50 text-xl"
-                            data-action={action.toString()}
-                            key={`ta-${index}-${action}`}>
-                            {action}
-                        </div>
-                    ))}
+            <section className=" w-10/12 h-9 flex items-center justify-evenly p-2 bg-[#bca180] gap-1 mx-4 rounded-2xl relative">
+                {stats && stats.balls ? (
+                    stats.timeline
+                        .slice(-6)
+                        .map((action, index) => (
+                            <TimelineAction action={action} key={`ta-${index}-${action}`} />
+                        ))
+                ) : (
+                    <h1 className=" text-[color:darkblue] text-2xl text-center">Timeline</h1>
+                )}
             </section>
         </main>
     )
